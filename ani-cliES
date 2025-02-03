@@ -1,0 +1,19 @@
+#!/bin/bash
+
+# Busqueda 
+
+buscar_anime(){
+	local busqueda="$1"
+	local url_base="https://ww3.animeonline.ninja"
+
+	busqueda_encoded=$(echo "$busqueda" | sed 's/ /+/g')
+
+	echo "Buscando: $busqueda"
+	resultados=$(curl -s "$url_base/?s=$busqueda_encoded")
+	
+	enlaces=$(echo "$resultados" | grep -o 'href="[^"]*episodio[^"]*"' | sed 's/href="//;s/"//')
+    
+    echo "$enlaces"
+	}
+
+buscar_anime "$1"
