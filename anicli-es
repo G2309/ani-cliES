@@ -1,10 +1,14 @@
 #!/usr/bin/env python3
 
 import sys
+import re
+import json
+import subprocess
 import urllib.request
 import urllib.parse
 import ssl
 from bs4 import BeautifulSoup
+from simple_term_menu import TerminalMenu
 
 ssl._create_default_https_context = ssl._create_unverified_context
 
@@ -38,13 +42,146 @@ def search(query):
     
     return results
 
-if __name__ == "__main__":
-    query = sys.argv[1] if len(sys.argv) > 1 else "naruto"
+def get_episodes(anime_url):
+    html = fetch(anime_url)
+    
+    info_match = re.search(r'var anime_info = \["([^"]+)","([^"]+)","([^"]+)"\]', html)
+    slug = info_match.group(3) if info_match else None
+    
+    eps_match = re.search(r'var episodes = (\[\[.+?\]\]);', html)
+    if not eps_match:
+        return slug, []
+    
+    episodes_raw = eps_match.group(1)
+    episodes_list = json.loads(episodes_raw)
+    
+    episodes = [ep[0] for ep in episodes_list]
+    episodes.sort()
+    
+    return slug, episodes
+
+def get_servers(episode_url):
+    html = fetch(episode_url)
+    
+    match = re.search(r'var videos = ({.+?});', html)
+    if not match:
+        return []
+    
+    videos_raw = match.group(1)
+    videos = json.loads(videos_raw)
+    
+    servers = []
+    for lang, server_list in videos.items():
+        for server in server_list:
+            servers.append({
+                "title": f"[{lang}] {server.get('title', server.get('server', '?'))}",
+                "url": server.get("code", "")
+            })
+    
+    return servers
+
+def play_video(url, title=""):
+    result = subprocess.run(
+        ["mpv", f"--title={title}", url],
+        capture_output=False
+    )
+    return result.returncode == 0
+
+def select_menu(options, title):
+    menu = TerminalMenu(options, title=title)
+    return menu.show()
+
+def main():
+    query = sys.argv[1] if len(sys.argv) > 1 else None
+    
+    if not query:
+        query = input("Buscar anime: ").strip()
+        if not query:
+            return
     
     print(f"Buscando: {query}\n")
-    
     results = search(query)
     
-    for i, r in enumerate(results, 1):
-        print(f"[{i}] [{r['type']}] {r['title']}")
-        print(f"    {r['url']}\n")
+    if not results:
+        print("No se encontraron resultados")
+        return
+    
+    options = [f"[{r['type']}] {r['title']}" for r in results]
+    options.append(">> Salir")
+    
+    idx = select_menu(options, "Selecciona un anime:")
+    
+    if idx is None or idx == len(results):
+        return
+    
+    selected = results[idx]
+    print(f"\nCargando: {selected['title']}...")
+    
+    slug, episodes = get_episodes(selected["url"])
+    
+    if not episodes:
+        print("No se encontraron episodios")
+        return
+    
+    page_size = 12
+    current_page = 0
+    total_pages = (len(episodes) + page_size - 1) // page_size
+    
+    while True:
+        start = current_page * page_size
+        end = min(start + page_size, len(episodes))
+        page_eps = episodes[start:end]
+        
+        options = [f"Episodio {ep}" for ep in page_eps]
+        
+        if current_page > 0:
+            options.append("<< Anterior")
+        if current_page < total_pages - 1:
+            options.append(">> Siguiente")
+        options.append(">> Volver")
+        
+        title_menu = f"{selected['title']} - Pagina {current_page + 1}/{total_pages}"
+        idx = select_menu(options, title_menu)
+        
+        if idx is None:
+            break
+        
+        choice = options[idx]
+        
+        if choice == ">> Volver":
+            break
+        elif choice == "<< Anterior":
+            current_page -= 1
+        elif choice == ">> Siguiente":
+            current_page += 1
+        else:
+            ep_num = page_eps[idx]
+            ep_url = f"{BASE_URL}/ver/{slug}-{ep_num}"
+            
+            print(f"\nCargando servidores...")
+            servers = get_servers(ep_url)
+            
+            if not servers:
+                print("No se encontraron servidores")
+                input("\nEnter para continuar...")
+                continue
+            
+            while True:
+                server_options = [s["title"] for s in servers]
+                server_options.append(">> Volver")
+                
+                server_idx = select_menu(
+                    server_options, 
+                    f"Episodio {ep_num} - Servidor:"
+                )
+                
+                if server_idx is None or server_idx == len(servers):
+                    break
+                
+                server = servers[server_idx]
+                print(f"\nReproduciendo...")
+                if not play_video(server["url"], f"{selected['title']} - Ep {ep_num}"):
+                    print("Error. Prueba otro servidor.")
+                    input("Enter para continuar...")
+
+main()
