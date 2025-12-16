@@ -35,8 +35,10 @@
       };
     in
     {
-      packages.${system}.default = anicli-es;
-      packages.${system}.anicli-es = anicli-es;
+      packages.${system} = {
+        default = anicli-es;
+        anicli-es = anicli-es;
+      };
       
       devShells.${system}.default = pkgs.mkShell {
         buildInputs = [
