@@ -14,8 +14,30 @@
         ps.simple-term-menu
         ps.playwright
       ]);
+      
+      anicli-es = pkgs.stdenv.mkDerivation {
+        pname = "anicli-es";
+        version = "1.0.0";
+        src = ./.;
+        
+        nativeBuildInputs = [ pkgs.makeWrapper ];
+        
+        installPhase = ''
+          mkdir -p $out/bin
+          cp anicli-es $out/bin/anicli-es
+          chmod +x $out/bin/anicli-es
+          
+          wrapProgram $out/bin/anicli-es \
+            --prefix PATH : ${pkgs.lib.makeBinPath [ python pkgs.mpv pkgs.yt-dlp ]} \
+            --set PLAYWRIGHT_BROWSERS_PATH ${pkgs.playwright-driver.browsers} \
+            --set PLAYWRIGHT_SKIP_VALIDATE_HOST_REQUIREMENTS true
+        '';
+      };
     in
     {
+      packages.${system}.default = anicli-es;
+      packages.${system}.anicli-es = anicli-es;
+      
       devShells.${system}.default = pkgs.mkShell {
         buildInputs = [
           python
