@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-
 import sys
 import re
 import subprocess
@@ -9,32 +8,23 @@ import ssl
 from bs4 import BeautifulSoup
 from simple_term_menu import TerminalMenu
 from playwright.sync_api import sync_playwright
-
 ssl._create_default_https_context = ssl._create_unverified_context
-
 BASE_URL = "https://katanime.net"
-
 HEADERS = {
     "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36"
 }
-
-PREFERRED_SERVERS = ["Mp4Upload", "Mega", "VOE", "FileMoon", "Streamtape"]
-
 def fetch(url):
     req = urllib.request.Request(url, headers=HEADERS)
     with urllib.request.urlopen(req, timeout=30) as resp:
         return resp.read().decode("utf-8")
-
 def search(query):
     url = f"{BASE_URL}/buscar?q={urllib.parse.quote(query)}"
     html = fetch(url)
     soup = BeautifulSoup(html, "html.parser")
-    
     results = []
     for div in soup.select("#article-div > div"):
         link = div.select_one("a._1A2Dc")
         title_el = div.select_one("a._2uHIS")
-        
         if link and title_el:
             href = link.get("href", "")
             if not href.startswith("http"):
@@ -43,21 +33,16 @@ def search(query):
                 "title": title_el.get_text(strip=True),
                 "url": href
             })
-    
     return results
-
 def get_episodes_playwright(anime_url):
     episodes = []
-    
     with sync_playwright() as p:
         browser = p.chromium.launch(headless=True)
         page = browser.new_page()
         page.goto(anime_url, wait_until="networkidle", timeout=30000)
         page.wait_for_timeout(2000)
-        
         html = page.content()
         soup = BeautifulSoup(html, "html.parser")
-        
         for a in soup.select("a[href*='/capitulo/']"):
             href = a.get("href", "")
             match = re.search(r'-(\d+)/?$', href)
@@ -67,16 +52,12 @@ def get_episodes_playwright(anime_url):
                     href = BASE_URL + href
                 if not any(e["url"] == href for e in episodes):
                     episodes.append({"num": ep_num, "url": href})
-        
         browser.close()
-    
     episodes.sort(key=lambda x: x["num"])
     return episodes
-
 def get_servers(episode_url):
     html = fetch(episode_url)
     soup = BeautifulSoup(html, "html.parser")
-    
     servers = []
     for li in soup.select("ul.dropcaps li"):
         a = li.select_one("a.play-video")
@@ -88,152 +69,102 @@ def get_servers(episode_url):
                     "name": name,
                     "data": player_data
                 })
-    
-    sorted_servers = []
-    for pref in PREFERRED_SERVERS:
-        for s in servers:
-            if s["name"] == pref and s not in sorted_servers:
-                sorted_servers.append(s)
-    for s in servers:
-        if s not in sorted_servers:
-            sorted_servers.append(s)
-    
-    return sorted_servers
-
+    return servers
 def get_video_url_playwright(server_data):
     reproductor_url = f"{BASE_URL}/reproductor?url={server_data}"
     video_url = None
-    
     with sync_playwright() as p:
         browser = p.chromium.launch(headless=True)
         page = browser.new_page()
-        
         page.goto(reproductor_url, wait_until="networkidle", timeout=30000)
         page.wait_for_timeout(2000)
-        
         html = page.content()
         soup = BeautifulSoup(html, "html.parser")
-        
         iframe = soup.select_one("iframe")
         if iframe:
             video_url = iframe.get("src", "")
-        
         if not video_url:
             iframe_el = page.query_selector("iframe")
             if iframe_el:
                 video_url = iframe_el.get_attribute("src")
-        
         browser.close()
-    
     return video_url
-
 def play_video(url, title=""):
     subprocess.run(["mpv", f"--title={title}", url])
-
 def select_menu(options, title):
     menu = TerminalMenu(options, title=title)
     return menu.show()
-
 def main():
-    query = sys.argv[1] if len(sys.argv) > 1 else None
-    
-    if not query:
-        query = input("Buscar anime: ").strip()
-        if not query:
-            return
-    
-    print(f"Buscando: {query}\n")
-    results = search(query)
-    
-    if not results:
-        print("No se encontraron resultados")
-        return
-    
-    options = [r["title"] for r in results]
-    options.append(">> Salir")
-    
-    idx = select_menu(options, "Selecciona anime:")
-    
-    if idx is None or idx == len(results):
-        return
-    
-    selected = results[idx]
-    print(f"\nCargando episodios de {selected['title']}...")
-    
-    episodes = get_episodes_playwright(selected["url"])
-    
-    if not episodes:
-        print("No se encontraron episodios")
-        return
-    
-    page_size = 12
-    current_page = 0
-    total_pages = (len(episodes) + page_size - 1) // page_size
-    
     while True:
-        start = current_page * page_size
-        end = min(start + page_size, len(episodes))
-        page_eps = episodes[start:end]
-        
-        options = [f"Episodio {ep['num']}" for ep in page_eps]
-        
-        if current_page > 0:
-            options.append("<< Anterior")
-        if current_page < total_pages - 1:
-            options.append(">> Siguiente")
-        options.append(">> Volver")
-        
-        title_menu = f"{selected['title']} [{current_page + 1}/{total_pages}]"
-        idx = select_menu(options, title_menu)
-        
-        if idx is None:
-            break
-        
-        choice = options[idx]
-        
-        if choice == ">> Volver":
-            break
-        elif choice == "<< Anterior":
-            current_page -= 1
-        elif choice == ">> Siguiente":
-            current_page += 1
-        else:
-            ep = page_eps[idx]
-            
-            print(f"\nCargando servidores...")
-            servers = get_servers(ep["url"])
-            
-            if not servers:
-                print("No se encontraron servidores")
-                input("\nEnter para continuar...")
+        query = sys.argv[1] if len(sys.argv) > 1 else None
+        sys.argv = sys.argv[:1]
+        if not query:
+            query = input("Buscar anime: ").strip()
+            if not query:
                 continue
-            
-            while True:
-                server_options = [s["name"] for s in servers]
-                server_options.append(">> Volver")
-                
-                server_idx = select_menu(
-                    server_options,
-                    f"Episodio {ep['num']} - Servidor:"
-                )
-                
-                if server_idx is None or server_idx == len(servers):
-                    break
-                
-                server = servers[server_idx]
-                print(f"\nObteniendo URL de {server['name']}...")
-                
-                try:
-                    video_url = get_video_url_playwright(server["data"])
-                    
-                    if video_url:
-                        print(f"Reproduciendo...")
-                        play_video(video_url, f"{selected['title']} - Ep {ep['num']}")
-                    else:
-                        print("No se pudo obtener la URL del video")
-                        input("\nEnter para continuar...")
-                except Exception as e:
-                    print(f"Error: {e}")
+        print(f"Buscando: {query}\n")
+        results = search(query)
+        if not results:
+            print("No se encontraron resultados")
+            continue
+        options = [r["title"] for r in results]
+        options.append(">> Salir")
+        idx = select_menu(options, "Selecciona anime:")
+        if idx is None or idx == len(results):
+            continue
+        selected = results[idx]
+        print(f"\nCargando episodios de {selected['title']}...")
+        episodes = get_episodes_playwright(selected["url"])
+        if not episodes:
+            print("No se encontraron episodios")
+            continue
+        page_size = 12
+        current_page = 0
+        total_pages = (len(episodes) + page_size - 1) // page_size
+        while True:
+            start = current_page * page_size
+            end = min(start + page_size, len(episodes))
+            page_eps = episodes[start:end]
+            options = [f"Episodio {ep['num']}" for ep in page_eps]
+            if current_page > 0:
+                options.append("<< Anterior")
+            if current_page < total_pages - 1:
+                options.append(">> Siguiente")
+            options.append(">> Volver")
+            title_menu = f"{selected['title']} [{current_page + 1}/{total_pages}]"
+            idx = select_menu(options, title_menu)
+            if idx is None:
+                break
+            choice = options[idx]
+            if choice == ">> Volver":
+                break
+            elif choice == "<< Anterior":
+                current_page -= 1
+            elif choice == ">> Siguiente":
+                current_page += 1
+            else:
+                ep = page_eps[idx]
+                print(f"\nCargando servidores...")
+                servers = get_servers(ep["url"])
+                if not servers:
+                    print("No se encontraron servidores")
                     input("\nEnter para continuar...")
-
+                    continue
+                mp4_server = next((s for s in servers if s["name"] == "Mp4Upload"), None)
+                if mp4_server:
+                    print(f"\nObteniendo URL de Mp4Upload...")
+                    try:
+                        video_url = get_video_url_playwright(mp4_server["data"])
+                        if video_url:
+                            print(f"Reproduciendo...")
+                            play_video(video_url, f"{selected['title']} - Ep {ep['num']}")
+                        else:
+                            print("No se pudo obtener la URL del video")
+                            input("\nEnter para continuar...")
+                    except Exception as e:
+                        print(f"Error: {e}")
+                        input("\nEnter para continuar...")
+                else:
+                    print("Mp4Upload no disponible para este episodio")
+                    input("\nEnter para continuar...")
 main()
