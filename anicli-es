@@ -70,7 +70,7 @@ def get_cached_image(url):
     return None
 
 class MenuInterface:
-    def select(self, options, prompt="Selecciona:", icons=None):
+    def select(self, options, prompt="Selecciona:", icons=None, cover=None):
         raise NotImplementedError
     
     def input_text(self, prompt=""):
@@ -84,7 +84,7 @@ class TerminalMenu(MenuInterface):
         from simple_term_menu import TerminalMenu as STM
         self.STM = STM
     
-    def select(self, options, prompt="Selecciona:", icons=None):
+    def select(self, options, prompt="Selecciona:", icons=None, cover=None):
         menu = self.STM(options, title=prompt)
         return menu.show()
     
@@ -99,6 +99,16 @@ class TerminalMenu(MenuInterface):
         if wait:
             input("\nEnter para continuar...")
 
+# Layout solo para anicli-es (va por -theme-str, no toca tu config de rofi):
+# portada grande a la izquierda y la lista a la derecha.
+COVER_THEME = """
+window { width: 900px; }
+mainbox { children: [ inputbar, content ]; }
+content { orientation: horizontal; children: [ cover, listview ]; spacing: 12px; }
+cover { expand: false; width: 370px; background-image: url("%s", height); }
+listview { lines: 10; }
+"""
+
 class RofiMenu(MenuInterface):
     def __init__(self, theme=None):
         self.theme = theme
@@ -111,11 +121,13 @@ class RofiMenu(MenuInterface):
             cmd.extend(extra_args)
         return cmd
     
-    def select(self, options, prompt="Selecciona:", icons=None):
+    def select(self, options, prompt="Selecciona:", icons=None, cover=None):
         if not options:
             return None
         
         extra_args = ["-format", "i"]
+        if cover:
+            extra_args += ["-theme-str", COVER_THEME % cover]
         if icons:
             extra_args.append("-show-icons")
         
@@ -224,8 +236,9 @@ def get_video_url(server):
     return m.group(1) if m else None
 
 def play_video(url, title=""):
-    # --no-terminal: mpv no escribe ni lee teclas en la terminal del menu
-    subprocess.Popen(["mpv", "--no-terminal", f"--title={title}", url])
+    # --no-terminal: mpv no escribe ni lee teclas en la terminal del menu.
+    # run (no Popen): el menu vuelve solo cuando cierras mpv.
+    subprocess.run(["mpv", "--no-terminal", f"--title={title}", url])
 
 # Orden de preferencia: Desu/Magi son de jkanime y dan m3u8 directo; Mp4upload
 # lo resuelve yt-dlp. El resto depende de yt-dlp y suele fallar. Mega, Mediafire
@@ -307,7 +320,7 @@ class AniCli:
         if self.use_icons:
             anime_icon = get_cached_image(anime.get("img"))
         
-        page_size = 12
+        page_size = 15
         current_page = 0
         total_pages = (len(episodes) + page_size - 1) // page_size
         
@@ -324,13 +337,8 @@ class AniCli:
                 options.append(">> Siguiente")
             options.append(">> Volver")
             
-            icons = None
-            if self.use_icons and anime_icon:
-                icons = [anime_icon] * len(page_eps)
-                icons += [None] * (len(options) - len(page_eps))
-            
             title_menu = f"{anime['title']} [{current_page + 1}/{total_pages}]"
-            idx = self.menu.select(options, title_menu, icons=icons)
+            idx = self.menu.select(options, title_menu, cover=anime_icon)
             
             if idx is None:
                 break
