@@ -20,6 +20,7 @@ import ssl
 import argparse
 import tempfile
 import hashlib
+import shutil
 import json
 import base64
 from pathlib import Path
@@ -41,11 +42,7 @@ C_BLUE = "\033[94m"
 C_RESET = "\033[0m"
 
 def is_rofi_available():
-    try:
-        subprocess.run(["which", "rofi"], capture_output=True, check=True)
-        return True
-    except:
-        return False
+    return shutil.which("rofi") is not None
 
 def is_running_in_terminal():
     return sys.stdin.isatty() and sys.stdout.isatty()
@@ -64,7 +61,7 @@ def get_cached_image(url):
     if not url:
         return None
     CACHE_DIR.mkdir(parents=True, exist_ok=True)
-    filename = hashlib.md5(url.encode()).hexdigest() + ".webp"
+    filename = hashlib.md5(url.encode()).hexdigest() + (Path(urllib.parse.urlparse(url).path).suffix or ".jpg")
     path = CACHE_DIR / filename
     if path.exists():
         return str(path)
@@ -148,14 +145,16 @@ class RofiMenu(MenuInterface):
     def input_text(self, prompt=""):
         cmd = self._rofi_cmd(prompt)
         try:
-            result = subprocess.run(cmd, capture_output=True, text=True)
+            # input="" evita que rofi se quede leyendo la terminal si se lanza desde ella
+            result = subprocess.run(cmd, input="", capture_output=True, text=True)
             if result.returncode == 0:
                 return result.stdout.strip()
             return None
         except:
             return None
-    
+
     def notify(self, message, wait=False):
+        message = re.sub(r"\033\[\d+m", "", message)  # sin colores ANSI en notificaciones
         try:
             subprocess.run(
                 ["notify-send", "-a", "anicli-es", "anicli-es", message],
@@ -202,7 +201,9 @@ def get_servers(episode_url):
     for a in soup.select("a.servers.btn-show"):
         src = iframes.get(a.get("data-id", ""))
         if src:
-            servers.append({"name": a.get_text(strip=True), "url": src})
+            name = a.get_text(strip=True)
+            n = sum(s["name"].split(" ")[0] == name for s in servers)
+            servers.append({"name": f"{name} {n + 1}" if n else name, "url": src})
     # Servidores externos: embed en base64 dentro de "var servers".
     m = re.search(r"var servers = (\[.*?\]);", html)
     for sv in json.loads(m.group(1)) if m else []:
@@ -221,7 +222,8 @@ def get_video_url(server):
     return m.group(1) if m else None
 
 def play_video(url, title=""):
-    subprocess.Popen(["mpv", f"--title={title}", url])
+    # --no-terminal: mpv no escribe ni lee teclas en la terminal del menu
+    subprocess.Popen(["mpv", "--no-terminal", f"--title={title}", url])
 
 # Orden de preferencia: Desu/Magi son de jkanime y dan m3u8 directo; Mp4upload
 # lo resuelve yt-dlp. El resto depende de yt-dlp y suele fallar. Mega, Mediafire

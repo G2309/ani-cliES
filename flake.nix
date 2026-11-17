@@ -16,7 +16,7 @@
       
       anicli-es = pkgs.stdenv.mkDerivation {
         pname = "anicli-es";
-        version = "1.0.0";
+        version = "1.1.0";
         src = ./.;
         
         nativeBuildInputs = [ pkgs.makeWrapper ];
