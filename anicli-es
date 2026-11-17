@@ -154,6 +154,8 @@ class RofiMenu(MenuInterface):
             return None
 
     def notify(self, message, wait=False):
+        if not wait:
+            return  # solo errores/avisos (wait=True); el progreso no notifica
         message = re.sub(r"\033\[\d+m", "", message)  # sin colores ANSI en notificaciones
         try:
             subprocess.run(
